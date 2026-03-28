@@ -16,6 +16,13 @@ if (!process.env.MONGODB_URI) {
   console.error('❌ MONGODB_URI is not defined in environment variables');
 }
 
+// Parse allowed origins from environment variable (comma-separated list)
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim());
+
+console.log('✅ Allowed CORS origins:', allowedOrigins);
+
 // Connect to MongoDB (with retry logic for serverless)
 let cachedDb = null;
 
@@ -37,18 +44,60 @@ async function connectToDatabase() {
   }
 }
 
-// Middleware
+// Security middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 app.use(compression());
 
-// CORS configuration
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+// ============================================
+// FIXED CORS CONFIGURATION
+// ============================================
+// CORS options - will send only ONE origin
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, etc)
+    if (!origin) return callback(null, true);
+    
+    // Check if the origin is allowed
+    if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins[0] === '*') {
+      callback(null, true);
+    } else {
+      console.log(`❌ CORS blocked origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  optionsSuccessStatus: 200
-}));
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
+// Handle preflight requests explicitly
+app.options('*', cors(corsOptions));
+
+// Add custom middleware to ensure single CORS header
+app.use((req, res, next) => {
+  // Remove any existing CORS headers to avoid duplicates
+  res.removeHeader('Access-Control-Allow-Origin');
+  res.removeHeader('Access-Control-Allow-Credentials');
+  res.removeHeader('Access-Control-Allow-Methods');
+  res.removeHeader('Access-Control-Allow-Headers');
+  
+  // Set the correct CORS header based on origin
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin) || allowedOrigins[0] === '*') {
+    res.setHeader('Access-Control-Allow-Origin', origin || (allowedOrigins[0] === '*' ? '*' : allowedOrigins[0]));
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  }
+  next();
+});
+// ============================================
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
@@ -73,7 +122,8 @@ app.get('/health', async (req, res) => {
       status: 'OK',
       timestamp: new Date().toISOString(),
       mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      environment: process.env.NODE_ENV
+      environment: process.env.NODE_ENV,
+      allowedOrigins: allowedOrigins // For debugging - shows which origins are allowed
     });
   } catch (error) {
     res.status(500).json({
@@ -128,5 +178,6 @@ if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔗 Allowed origins: ${allowedOrigins.join(', ')}`);
   });
 }
