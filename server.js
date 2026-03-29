@@ -39,9 +39,8 @@ async function connectToDatabase() {
     console.log('✅ MongoDB Connected');
     return cachedDb;
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error.message);
-    // Don't throw, just return null to handle gracefully
-    return null;
+    console.error('❌ MongoDB connection error:', error);
+    throw error;
   }
 }
 
@@ -75,7 +74,30 @@ const corsOptions = {
 
 // Apply CORS middleware
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+
+// REMOVE OR FIX THIS LINE - The problematic line was app.options('*', cors(corsOptions))
+// Instead, let CORS middleware handle OPTIONS automatically
+// app.options('*', cors(corsOptions)); // <-- REMOVE THIS LINE
+
+// Add custom middleware to ensure single CORS header
+app.use((req, res, next) => {
+  // Remove any existing CORS headers to avoid duplicates
+  res.removeHeader('Access-Control-Allow-Origin');
+  res.removeHeader('Access-Control-Allow-Credentials');
+  res.removeHeader('Access-Control-Allow-Methods');
+  res.removeHeader('Access-Control-Allow-Headers');
+  
+  // Set the correct CORS header based on origin
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin) || allowedOrigins[0] === '*') {
+    res.setHeader('Access-Control-Allow-Origin', origin || (allowedOrigins[0] === '*' ? '*' : allowedOrigins[0]));
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  }
+  next();
+});
+// ============================================
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
@@ -94,12 +116,12 @@ app.use('/api/contact/submit', limiter);
 // Health check endpoint
 app.get('/health', async (req, res) => {
   try {
-    const db = await connectToDatabase();
+    await connectToDatabase();
     res.status(200).json({
       success: true,
       status: 'OK',
       timestamp: new Date().toISOString(),
-      mongodb: db ? 'connected' : 'disconnected',
+      mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
       environment: process.env.NODE_ENV,
       allowedOrigins: allowedOrigins
     });
@@ -147,12 +169,11 @@ app.use((req, res) => {
 // Error handling middleware
 app.use(errorMiddleware);
 
-// IMPORTANT: For Vercel serverless, export the app directly
-// DO NOT call app.listen() in production
+// For Vercel serverless functions
 module.exports = app;
 
-// For local development only - this will NOT run on Vercel
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+// For local development
+if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
