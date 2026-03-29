@@ -2,23 +2,23 @@
   "version": 2,
   "builds": [
     {
-      "src": "server-simple.js",
+      "src": "server-full.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/health",
-      "dest": "/server-simple.js"
+      "dest": "/server-full.js"
     },
     {
       "src": "/api/contact/submit",
-      "dest": "/server-simple.js",
+      "dest": "/server-full.js",
       "methods": ["POST", "OPTIONS"]
     },
     {
       "src": "/(.*)",
-      "dest": "/server-simple.js"
+      "dest": "/server-full.js"
     }
   ]
 }
