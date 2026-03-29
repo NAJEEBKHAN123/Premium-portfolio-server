@@ -61,14 +61,42 @@ contactSchema.index({ createdAt: -1 });
 contactSchema.index({ email: 1, status: 1 });
 contactSchema.index({ status: 1, createdAt: -1 });
 
-// Virtual for formatted date
-contactSchema.virtual('formattedDate').get(function() {
-  return this.createdAt.toLocaleDateString('en-US', {
+// Helper function to get Pakistan time
+const getPakistanTime = (date) => {
+  if (!date) return 'N/A';
+  return date.toLocaleString('en-US', {
+    timeZone: 'Asia/Karachi',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+};
+
+// Virtual for formatted date with Pakistan time
+contactSchema.virtual('formattedDate').get(function() {
+  return getPakistanTime(this.createdAt);
+});
+
+// Virtual for Pakistan time only
+contactSchema.virtual('pakistanTime').get(function() {
+  return getPakistanTime(this.createdAt);
+});
+
+// Virtual for short date (without seconds)
+contactSchema.virtual('shortDate').get(function() {
+  if (!this.createdAt) return 'N/A';
+  return this.createdAt.toLocaleString('en-US', {
+    timeZone: 'Asia/Karachi',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
   });
 });
 
@@ -78,6 +106,11 @@ contactSchema.methods.markAsReplied = async function(replyMessage) {
   this.repliedAt = new Date();
   this.replyMessage = replyMessage;
   await this.save();
+};
+
+// Method to get formatted replied time
+contactSchema.methods.getRepliedTime = function() {
+  return getPakistanTime(this.repliedAt);
 };
 
 // Static method to get statistics
